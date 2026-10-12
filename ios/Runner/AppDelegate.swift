@@ -47,6 +47,17 @@ import Flutter
             case "getAudioRoute":
                 result(audioEngine.getCurrentRouteInfo())
 
+            case "requestMicrophonePermission":
+                if #available(iOS 17.0, *) {
+                    AVAudioApplication.requestRecordPermission { granted in
+                        DispatchQueue.main.async { result(granted) }
+                    }
+                } else {
+                    AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                        DispatchQueue.main.async { result(granted) }
+                    }
+                }
+
             default:
                 result(FlutterMethodNotImplemented)
             }

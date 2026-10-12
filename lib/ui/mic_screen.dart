@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../models/audio_state.dart';
 import '../services/audio_channel_service.dart';
 import 'widgets/vu_meter.dart';
@@ -56,13 +57,73 @@ class _MicScreenState extends State<MicScreen> with WidgetsBindingObserver {
     _diagnosticSub = _audioService.diagnosticStream.listen((diag) {
       if (mounted) setState(() => _diagnostic = diag);
     });
+
+    // Automatically prompt and verify microphone permission every time app opens
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkInitialPermission();
+    });
+  }
+
+  Future<void> _checkInitialPermission() async {
+    final granted = await _audioService.checkAndRequestPermission();
+    if (!granted && mounted) {
+      _showPermissionDialog();
+    }
+  }
+
+  void _showPermissionDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF141923),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.mic, color: Color(0xFF00E5FF), size: 24),
+              SizedBox(width: 10),
+              Text(
+                'Microphone Access',
+                style: TextStyle(color: Colors.white, fontSize: 18),
+              ),
+            ],
+          ),
+          content: const Text(
+            'Live Mic Pro requires microphone access to stream live voice directly to your Bluetooth speaker.\n\nPlease enable Microphone access in Settings to continue.',
+            style: TextStyle(color: Color(0xFFB0BEC5), fontSize: 13, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Dismiss', style: TextStyle(color: Color(0xFF78909C))),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00E5FF),
+                foregroundColor: const Color(0xFF0A0E17),
+              ),
+              onPressed: () async {
+                Navigator.pop(context);
+                final retry = await _audioService.checkAndRequestPermission();
+                if (!retry) {
+                  openAppSettings();
+                }
+              },
+              child: const Text('Open Settings', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // When returning to foreground, refresh route information
+    // When returning to foreground, refresh route information and re-check permission
     if (state == AppLifecycleState.resumed) {
       _audioService.refreshAudioRoute();
+      _audioService.checkAndRequestPermission();
     }
   }
 

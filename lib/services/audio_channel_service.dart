@@ -133,13 +133,27 @@ class AudioChannelService {
     _stateController.add(newState);
   }
 
+  /// Explicitly check and request microphone permission natively and via plugin
+  Future<bool> checkAndRequestPermission() async {
+    // 1. Try native platform request first (triggers iOS modal directly)
+    try {
+      final bool? nativeGranted =
+          await _methodChannel.invokeMethod<bool>('requestMicrophonePermission');
+      if (nativeGranted == true) return true;
+    } catch (_) {}
+
+    // 2. Try permission_handler
+    final status = await Permission.microphone.request();
+    return status.isGranted;
+  }
+
   /// Request microphone permission and start the live audio engine
   Future<bool> startMic({double? initialGain}) async {
-    final status = await Permission.microphone.request();
-    if (!status.isGranted) {
+    final granted = await checkAndRequestPermission();
+    if (!granted) {
       _updateState(MicState.error);
       _diagnosticController.add(const EngineDiagnostic(
-        lastError: 'Microphone permission denied by user.',
+        lastError: 'Microphone permission denied by user. Enable in iOS Settings.',
       ));
       return false;
     }
