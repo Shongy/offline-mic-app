@@ -1,0 +1,62 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.3'
+          channel: 'stable'
+          cache: true
+
+      - name: Get Flutter Dependencies
+        run: flutter pub get
+
+      - name: Build Release APK
+        run: flutter build apk --release
+
+      - name: Upload APK to Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: live_mic_app_release_apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Create GitHub Release with APK
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/heads/main')
+        with:
+          tag_name: v1.0.0
+          name: "Live Mic Pro v1.0.0 (Release APK)"
+          body: |
+            ### Live Mic Pro — Offline Live Microphone to Bluetooth Speaker
+            
+            Download `app-release.apk` below directly to your Android device to install and test!
+            
+            - **Live streaming**: Low latency PCM to JBL or Bluetooth speaker
+            - **Background persistent**: Foreground service with notification
+            - **Simultaneous mixing**: Coexists with YouTube media
+            - **Offline**: Zero analytics, zero audio recording
+          files: build/app/outputs/flutter-apk/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
