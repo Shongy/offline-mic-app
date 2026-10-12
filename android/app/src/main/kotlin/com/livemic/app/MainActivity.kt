@@ -88,6 +88,39 @@ class MainActivity : FlutterActivity(), LiveAudioEngine.AudioEngineListener {
                         result.success(audioRouteHelper.getCurrentRoute())
                     }
 
+                    "getAvailableInputs" -> {
+                        val audioManager = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+                        val list = mutableListOf<Map<String, Any>>()
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            val devices = audioManager.getDevices(android.media.AudioManager.GET_DEVICES_INPUTS)
+                            for (dev in devices) {
+                                val isBuiltIn = dev.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_MIC
+                                val name = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) dev.productName.toString() else "Microphone ${dev.id}"
+                                list.add(mapOf(
+                                    "id" to dev.id.toString(),
+                                    "name" to (if (name.isNotBlank()) name else "Microphone"),
+                                    "type" to if (isBuiltIn) "builtInMic" else "external",
+                                    "isBuiltIn" to isBuiltIn,
+                                    "isSelected" to isBuiltIn
+                                ))
+                            }
+                        }
+                        if (list.isEmpty()) {
+                            list.add(mapOf(
+                                "id" to "builtin_default",
+                                "name" to "Phone Built-In Microphone",
+                                "type" to "builtInMic",
+                                "isBuiltIn" to true,
+                                "isSelected" to true
+                            ))
+                        }
+                        result.success(list)
+                    }
+
+                    "setPreferredInput" -> {
+                        result.success(true)
+                    }
+
                     else -> result.notImplemented()
                 }
             }

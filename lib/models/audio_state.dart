@@ -24,6 +24,53 @@ enum MicState {
   bool get isActive => this == MicState.live || this == MicState.starting;
 }
 
+/// Represents an available hardware microphone input source.
+class MicInputDevice {
+  final String id;
+  final String name;
+  final String type; // 'builtInMic', 'bluetooth', 'wired', 'usb', 'unknown'
+  final bool isBuiltIn;
+  final bool isSelected;
+
+  const MicInputDevice({
+    required this.id,
+    required this.name,
+    required this.type,
+    required this.isBuiltIn,
+    this.isSelected = false,
+  });
+
+  MicInputDevice copyWith({bool? isSelected}) {
+    return MicInputDevice(
+      id: id,
+      name: name,
+      type: type,
+      isBuiltIn: isBuiltIn,
+      isSelected: isSelected ?? this.isSelected,
+    );
+  }
+
+  factory MicInputDevice.fromMap(Map<dynamic, dynamic> map, {bool isSelected = false}) {
+    return MicInputDevice(
+      id: map['id']?.toString() ?? map['uid']?.toString() ?? 'default',
+      name: map['name'] as String? ?? 'Microphone',
+      type: map['type'] as String? ?? 'unknown',
+      isBuiltIn: map['isBuiltIn'] as bool? ?? false,
+      isSelected: isSelected,
+    );
+  }
+
+  factory MicInputDevice.defaultBuiltIn() {
+    return const MicInputDevice(
+      id: 'built_in_default',
+      name: 'Phone Built-In Microphone',
+      type: 'builtInMic',
+      isBuiltIn: true,
+      isSelected: true,
+    );
+  }
+}
+
 /// Represents the active hardware audio output route.
 class AudioRouteInfo {
   final String deviceName;

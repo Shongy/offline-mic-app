@@ -24,6 +24,7 @@ class SwiftLiveAudioEngine: NSObject {
     private var isRunning = false
     private var isInterrupted = false
     private var currentGain: Float = 1.0
+    private var preferredInputUid: String? = nil
 
     private var meterThrottleCounter = 0
     private let meterInterval = 3
@@ -66,7 +67,112 @@ class SwiftLiveAudioEngine: NSObject {
         )
     }
 
-    // MARK: - Public Controls
+    // MARK: - Microphone Inputs & Selection
+
+    func getAvailableInputs() -> [[String: Any]] {
+        let session = AVAudioSession.sharedInstance()
+        let inputs = session.availableInputs ?? []
+
+        var result: [[String: Any]] = []
+        for input in inputs {
+            let isBuiltIn = (input.portType == .builtInMic)
+            var typeString = "builtInMic"
+            switch input.portType {
+            case .builtInMic:
+                typeString = "builtInMic"
+            case .bluetoothHFP:
+                typeString = "bluetooth"
+            case .headsetMic:
+                typeString = "wired"
+            case .usbAudio:
+                typeString = "usb"
+            default:
+                typeString = "other"
+            }
+
+            let isSelected = (preferredInputUid == input.uid) || (preferredInputUid == nil && isBuiltIn)
+
+            result.append([
+                "id": input.uid,
+                "name": input.portName,
+                "type": typeString,
+                "isBuiltIn": isBuiltIn,
+                "isSelected": isSelected
+            ])
+        }
+        return result
+    }
+
+    func setPreferredInput(uid: String) -> Bool {
+        self.preferredInputUid = uid
+        let session = AVAudioSession.sharedInstance()
+        if let targetInput = session.availableInputs?.first(where: { $0.uid == uid }) {
+            do {
+                try session.setPreferredInput(targetInput)
+                delegate?.onRouteChanged(route: getCurrentRouteInfo())
+                return true
+            } catch {
+                return false
+            }
+        }
+        return false
+    }
+
+    // MARK: - Native Permission & Engine Start
+
+    func ensurePermissionAndStart(gain: Float, completion: @escaping (Bool, String?) -> Void) {
+        let session = AVAudioSession.sharedInstance()
+        let permission = session.recordPermission
+
+        switch permission {
+        case .granted:
+            let success = self.start(gain: gain)
+            completion(success, success ? nil : "Failed to initialize audio engine")
+
+        case .undetermined:
+            // Native system permission modal prompt
+            if #available(iOS 17.0, *) {
+                AVAudioApplication.requestRecordPermission { [weak self] granted in
+                    DispatchQueue.main.async {
+                        guard let self = self else { return }
+                        if granted {
+                            let ok = self.start(gain: gain)
+                            completion(ok, ok ? nil : "Engine start failed after permission granted")
+                        } else {
+                            self.delegate?.onStateChanged(state: "error")
+                            self.delegate?.onError(message: "Microphone permission denied by user")
+                            completion(false, "Microphone permission denied by user in dialog")
+                        }
+                    }
+                }
+            } else {
+                session.requestRecordPermission { [weak self] granted in
+                    DispatchQueue.main.async {
+                        guard let self = self else { return }
+                        if granted {
+                            let ok = self.start(gain: gain)
+                            completion(ok, ok ? nil : "Engine start failed after permission granted")
+                        } else {
+                            self.delegate?.onStateChanged(state: "error")
+                            self.delegate?.onError(message: "Microphone permission denied by user")
+                            completion(false, "Microphone permission denied by user in dialog")
+                        }
+                    }
+                }
+            }
+
+        case .denied:
+            delegate?.onStateChanged(state: "error")
+            delegate?.onError(message: "Microphone permission is turned OFF in iPhone Settings.")
+            completion(false, "Microphone permission is disabled in iOS Settings. Tap 'Open Settings' to enable.")
+
+        @unknown default:
+            let ok = self.start(gain: gain)
+            completion(ok, nil)
+        }
+    }
+
+    // MARK: - Engine Lifecycle
 
     func start(gain: Float = 1.0) -> Bool {
         if isRunning {
@@ -81,9 +187,6 @@ class SwiftLiveAudioEngine: NSObject {
             let session = AVAudioSession.sharedInstance()
 
             // Configure audio session for simultaneous live mic and media playback
-            // .mixWithOthers allows YouTube to continue playing audio through the same speaker
-            // .allowBluetoothA2DP ensures high-quality A2DP output to JBL speakers without SCO degradation
-            // .defaultToSpeaker routes to loudspeaker instead of receiver when no external speaker is attached
             try session.setCategory(
                 .playAndRecord,
                 mode: .default,
@@ -93,9 +196,11 @@ class SwiftLiveAudioEngine: NSObject {
             // Request low buffer duration for minimal latency (~5ms)
             try session.setPreferredIOBufferDuration(0.005)
 
-            // Prefer phone's built-in microphone for voice capture
-            // This prevents the system from downgrading Bluetooth to a mono 8kHz/16kHz headset microphone
-            if let builtInMic = session.availableInputs?.first(where: { $0.portType == .builtInMic }) {
+            // Apply preferred microphone input if selected, otherwise prefer built-in mic
+            if let preferredUid = self.preferredInputUid,
+               let targetInput = session.availableInputs?.first(where: { $0.uid == preferredUid }) {
+                try session.setPreferredInput(targetInput)
+            } else if let builtInMic = session.availableInputs?.first(where: { $0.portType == .builtInMic }) {
                 try session.setPreferredInput(builtInMic)
             }
 
@@ -297,12 +402,16 @@ class SwiftLiveAudioEngine: NSObject {
             }
         }
 
+        // Include current active input microphone in route info
+        let currentMicName = route.inputs.first?.portName ?? "Phone Built-In Mic"
+
         return [
             "deviceName": deviceName,
             "routeType": routeType,
             "isBluetooth": isBluetooth,
             "isSimultaneousMixSupported": isSimultaneousMixSupported,
-            "mixExplanation": mixExplanation
+            "mixExplanation": mixExplanation,
+            "currentMicName": currentMicName
         ]
     }
 }

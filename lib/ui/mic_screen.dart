@@ -5,6 +5,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../models/audio_state.dart';
 import '../services/audio_channel_service.dart';
 import 'widgets/vu_meter.dart';
+import 'widgets/mic_input_card.dart';
 import 'widgets/route_card.dart';
 import 'widgets/gain_slider.dart';
 import 'widgets/feedback_warning.dart';
@@ -21,12 +22,15 @@ class _MicScreenState extends State<MicScreen> with WidgetsBindingObserver {
 
   MicState _micState = MicState.off;
   AudioRouteInfo _currentRoute = AudioRouteInfo.phoneSpeaker();
+  List<MicInputDevice> _availableInputs = [MicInputDevice.defaultBuiltIn()];
+  MicInputDevice _selectedInput = MicInputDevice.defaultBuiltIn();
   double _inputLevel = 0.0;
   double _gain = 1.0;
   EngineDiagnostic _diagnostic = const EngineDiagnostic();
 
   StreamSubscription<MicState>? _stateSub;
   StreamSubscription<AudioRouteInfo>? _routeSub;
+  StreamSubscription<List<MicInputDevice>>? _inputsSub;
   StreamSubscription<double>? _levelSub;
   StreamSubscription<EngineDiagnostic>? _diagnosticSub;
 
@@ -39,6 +43,8 @@ class _MicScreenState extends State<MicScreen> with WidgetsBindingObserver {
 
     _micState = _audioService.currentState;
     _currentRoute = _audioService.currentRoute;
+    _availableInputs = _audioService.availableInputs;
+    _selectedInput = _audioService.selectedInput;
     _gain = _audioService.gain;
     _diagnostic = _audioService.currentDiagnostic;
 
@@ -48,6 +54,15 @@ class _MicScreenState extends State<MicScreen> with WidgetsBindingObserver {
 
     _routeSub = _audioService.routeStream.listen((route) {
       if (mounted) setState(() => _currentRoute = route);
+    });
+
+    _inputsSub = _audioService.inputsStream.listen((inputs) {
+      if (mounted) {
+        setState(() {
+          _availableInputs = inputs;
+          _selectedInput = _audioService.selectedInput;
+        });
+      }
     });
 
     _levelSub = _audioService.levelStream.listen((level) {
@@ -123,6 +138,7 @@ class _MicScreenState extends State<MicScreen> with WidgetsBindingObserver {
     // When returning to foreground, refresh route information and re-check permission
     if (state == AppLifecycleState.resumed) {
       _audioService.refreshAudioRoute();
+      _audioService.refreshAvailableInputs();
       _audioService.checkAndRequestPermission();
     }
   }
@@ -132,6 +148,7 @@ class _MicScreenState extends State<MicScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _stateSub?.cancel();
     _routeSub?.cancel();
+    _inputsSub?.cancel();
     _levelSub?.cancel();
     _diagnosticSub?.cancel();
     super.dispose();
@@ -188,7 +205,8 @@ class _MicScreenState extends State<MicScreen> with WidgetsBindingObserver {
               _buildDiagRow('Buffer Frame Size', '${_diagnostic.bufferSize} samples'),
               _buildDiagRow('Estimated Latency', '${_diagnostic.estimatedLatencyMs.toStringAsFixed(1)} ms'),
               _buildDiagRow('Signal Limiter / Soft-Clip', _diagnostic.isClipping ? 'Engaged' : 'Nominal Headroom'),
-              _buildDiagRow('Active Route', _currentRoute.deviceName),
+              _buildDiagRow('Active Mic Input', _selectedInput.name),
+              _buildDiagRow('Active Output Route', _currentRoute.deviceName),
               _buildDiagRow('Route Protocol', _currentRoute.routeType),
               _buildDiagRow('Background Mode', 'Active Foreground / Audio UIBackgroundModes'),
               if (_diagnostic.lastError != null) ...[
@@ -286,6 +304,16 @@ class _MicScreenState extends State<MicScreen> with WidgetsBindingObserver {
               VuMeter(
                 level: _inputLevel,
                 isLive: isLive,
+              ),
+
+              const SizedBox(height: 16),
+
+              // Microphone Input Source Selector
+              MicInputCard(
+                availableInputs: _availableInputs,
+                selectedInput: _selectedInput,
+                onSelectInput: (id) => _audioService.setPreferredInput(id),
+                onRefresh: () => _audioService.refreshAvailableInputs(),
               ),
 
               const SizedBox(height: 16),
@@ -492,10 +520,11 @@ class _MicScreenState extends State<MicScreen> with WidgetsBindingObserver {
           const SizedBox(height: 10),
           const Text(
             '1. Connect your JBL speaker via phone Bluetooth settings.\n'
-            '2. Tap "MIC ON" and verify your voice through the speaker.\n'
-            '3. Switch to YouTube and start any video.\n'
-            '4. Your voice and YouTube audio stream together to the speaker.\n'
-            '5. When finished, return here and tap "MIC OFF" to release the mic.',
+            '2. Select your preferred mic (Phone Built-In Mic recommended).\n'
+            '3. Tap "MIC ON" and verify your voice through the speaker.\n'
+            '4. Switch to YouTube and start any video.\n'
+            '5. Your voice and YouTube audio stream together to the speaker.\n'
+            '6. When finished, return here and tap "MIC OFF" to release the mic.',
             style: TextStyle(
               color: Color(0xFF90A4AE),
               fontSize: 12,

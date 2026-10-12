@@ -20,6 +20,8 @@ class AudioChannelService {
       StreamController<MicState>.broadcast();
   final StreamController<AudioRouteInfo> _routeController =
       StreamController<AudioRouteInfo>.broadcast();
+  final StreamController<List<MicInputDevice>> _inputsController =
+      StreamController<List<MicInputDevice>>.broadcast();
   final StreamController<double> _levelController =
       StreamController<double>.broadcast();
   final StreamController<EngineDiagnostic> _diagnosticController =
@@ -27,6 +29,7 @@ class AudioChannelService {
 
   Stream<MicState> get stateStream => _stateController.stream;
   Stream<AudioRouteInfo> get routeStream => _routeController.stream;
+  Stream<List<MicInputDevice>> get inputsStream => _inputsController.stream;
   Stream<double> get levelStream => _levelController.stream;
   Stream<EngineDiagnostic> get diagnosticStream => _diagnosticController.stream;
 
@@ -35,6 +38,12 @@ class AudioChannelService {
 
   AudioRouteInfo _currentRoute = AudioRouteInfo.phoneSpeaker();
   AudioRouteInfo get currentRoute => _currentRoute;
+
+  List<MicInputDevice> _availableInputs = [MicInputDevice.defaultBuiltIn()];
+  List<MicInputDevice> get availableInputs => _availableInputs;
+
+  MicInputDevice _selectedInput = MicInputDevice.defaultBuiltIn();
+  MicInputDevice get selectedInput => _selectedInput;
 
   EngineDiagnostic _currentDiagnostic = const EngineDiagnostic();
   EngineDiagnostic get currentDiagnostic => _currentDiagnostic;
@@ -66,8 +75,8 @@ class AudioChannelService {
           ));
         },
       );
-    } catch (e) {
-      // Event channel unavailable (e.g. desktop simulator)
+    } catch (_) {
+      // Event channel unavailable
     }
 
     // Listen to real-time VU meter levels
@@ -79,16 +88,15 @@ class AudioChannelService {
             _levelController.add(level);
           }
         },
-        onError: (dynamic error) {
-          // Silent or report diagnostic
-        },
+        onError: (_) {},
       );
-    } catch (e) {
+    } catch (_) {
       // Meter channel unavailable
     }
 
-    // Query initial audio route
+    // Query initial audio route and available inputs
     refreshAudioRoute();
+    refreshAvailableInputs();
   }
 
   void _handleNativeEvent(Map<dynamic, dynamic> event) {
@@ -119,6 +127,7 @@ class AudioChannelService {
         _currentRoute = AudioRouteInfo.fromMap(event['route'] as Map);
         _routeController.add(_currentRoute);
       }
+      refreshAvailableInputs();
     } else if (type == 'diagnostic') {
       if (event['diagnostic'] is Map) {
         _currentDiagnostic =
@@ -147,28 +156,76 @@ class AudioChannelService {
     return status.isGranted;
   }
 
-  /// Request microphone permission and start the live audio engine
-  Future<bool> startMic({double? initialGain}) async {
-    final granted = await checkAndRequestPermission();
-    if (!granted) {
-      _updateState(MicState.error);
-      _diagnosticController.add(const EngineDiagnostic(
-        lastError: 'Microphone permission denied by user. Enable in iOS Settings.',
-      ));
+  /// Query all detected hardware microphone inputs (built-in, headset, bluetooth)
+  Future<List<MicInputDevice>> refreshAvailableInputs() async {
+    try {
+      final rawList =
+          await _methodChannel.invokeMethod<List<dynamic>>('getAvailableInputs');
+      if (rawList != null && rawList.isNotEmpty) {
+        final List<MicInputDevice> devices = [];
+        for (final item in rawList) {
+          if (item is Map) {
+            final dev = MicInputDevice.fromMap(
+              item,
+              isSelected: item['isSelected'] as bool? ?? false,
+            );
+            devices.add(dev);
+            if (dev.isSelected) {
+              _selectedInput = dev;
+            }
+          }
+        }
+        if (devices.isNotEmpty) {
+          _availableInputs = devices;
+          _inputsController.add(_availableInputs);
+        }
+      }
+    } catch (_) {
+      // Fallback
+    }
+    return _availableInputs;
+  }
+
+  /// Select which hardware microphone to use
+  Future<bool> setPreferredInput(String id) async {
+    try {
+      final result = await _methodChannel.invokeMethod<bool>('setPreferredInput', {
+        'uid': id,
+        'id': id,
+      });
+
+      _availableInputs = _availableInputs.map((d) {
+        return d.copyWith(isSelected: d.id == id);
+      }).toList();
+
+      final selected = _availableInputs.firstWhere(
+        (d) => d.id == id,
+        orElse: () => _selectedInput,
+      );
+      _selectedInput = selected;
+      _inputsController.add(_availableInputs);
+
+      return result ?? true;
+    } catch (_) {
       return false;
     }
+  }
 
+  /// Request microphone permission and start the live audio engine
+  Future<bool> startMic({double? initialGain}) async {
     _updateState(MicState.starting);
     final targetGain = initialGain ?? _gain;
 
     try {
       final result = await _methodChannel.invokeMethod<bool>('startLiveMic', {
         'gain': targetGain,
+        'preferredInputId': _selectedInput.id,
       });
 
       if (result == true) {
         _updateState(MicState.live);
         await refreshAudioRoute();
+        await refreshAvailableInputs();
         return true;
       } else {
         _updateState(MicState.error);
@@ -213,9 +270,7 @@ class AudioChannelService {
     _gain = gain.clamp(0.0, 3.0);
     try {
       await _methodChannel.invokeMethod('setGain', {'gain': _gain});
-    } catch (_) {
-      // Ignored if engine not running
-    }
+    } catch (_) {}
   }
 
   /// Query the currently active audio output route from native layer
@@ -227,9 +282,7 @@ class AudioChannelService {
         _currentRoute = AudioRouteInfo.fromMap(routeMap);
         _routeController.add(_currentRoute);
       }
-    } catch (_) {
-      // Fallback
-    }
+    } catch (_) {}
     return _currentRoute;
   }
 
@@ -238,6 +291,7 @@ class AudioChannelService {
     _meterSubscription?.cancel();
     _stateController.close();
     _routeController.close();
+    _inputsController.close();
     _levelController.close();
     _diagnosticController.close();
   }

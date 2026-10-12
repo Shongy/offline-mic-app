@@ -31,8 +31,9 @@ import Flutter
             case "startLiveMic":
                 let args = call.arguments as? [String: Any]
                 let gain = Float((args?["gain"] as? Double) ?? 1.0)
-                let success = audioEngine.start(gain: gain)
-                result(success)
+                audioEngine.ensurePermissionAndStart(gain: gain) { success, errorMsg in
+                    result(success)
+                }
 
             case "stopLiveMic":
                 let success = audioEngine.stop()
@@ -46,6 +47,15 @@ import Flutter
 
             case "getAudioRoute":
                 result(audioEngine.getCurrentRouteInfo())
+
+            case "getAvailableInputs":
+                result(audioEngine.getAvailableInputs())
+
+            case "setPreferredInput":
+                let args = call.arguments as? [String: Any]
+                let uid = (args?["uid"] as? String) ?? (args?["id"] as? String) ?? ""
+                let success = audioEngine.setPreferredInput(uid: uid)
+                result(success)
 
             case "requestMicrophonePermission":
                 if #available(iOS 17.0, *) {
