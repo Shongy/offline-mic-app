@@ -1,0 +1,58 @@
+workflows:
+  ios-release:
+    name: iOS Release IPA (Installable)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      groups:
+        - app_store_credentials # Optional: Configure in Codemagic UI if using App Store Connect
+    scripts:
+      - name: Set up local properties and dependencies
+        script: |
+          flutter packages pub get
+      - name: Install CocoaPods
+        script: |
+          cd ios
+          pod install
+          cd ..
+      - name: Build iOS IPA
+        script: |
+          # Build release IPA. If code signing identities are set in Codemagic UI,
+          # Codemagic will automatically sign. For manual testing without certificates,
+          # --no-codesign produces the payload and payload archive.
+          flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist || \
+          flutter build ios --release --no-codesign
+      - name: Package Unsigned IPA if no profile is provided
+        script: |
+          # Fallback packaging into installable IPA if unsigned build was performed
+          if [ ! -d "build/ios/ipa" ]; then
+            mkdir -p build/ios/ipa/Payload
+            cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
+            cd build/ios/ipa
+            zip -r live_mic_app.ipa Payload
+            cd ../..
+          fi
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - build/ios/iphoneos/Runner.app
+      - build/ios/archive/*.xcarchive
+
+  android-release:
+    name: Android Release APK
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+    environment:
+      flutter: stable
+      java: 17
+    scripts:
+      - name: Get Flutter dependencies
+        script: |
+          flutter packages pub get
+      - name: Build Android APK
+        script: |
+          flutter build apk --release
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk

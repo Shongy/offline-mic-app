@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Live Mic Pro</string>
+    <string name="channel_name">Live Microphone Service</string>
+    <string name="channel_description">Active when the live microphone is streaming in the background.</string>
+    <string name="notification_title">Live Microphone Active</string>
+    <string name="notification_text">Streaming live voice to audio output. Tap to return.</string>
+    <string name="notification_action_stop">Stop Mic</string>
+</resources>
