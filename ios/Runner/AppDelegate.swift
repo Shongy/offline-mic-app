@@ -1,5 +1,6 @@
 import UIKit
 import Flutter
+import AVFoundation
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, SwiftLiveAudioEngineDelegate {
