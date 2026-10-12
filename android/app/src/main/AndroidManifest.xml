@@ -19,7 +19,7 @@
     <application
         android:label="Live Mic Pro"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/ic_mic_notification"
         android:hardwareAccelerated="true">
 
         <activity
