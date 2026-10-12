@@ -1,7 +1,7 @@
 import UIKit
 import Flutter
 
-@UIApplicationMain
+@main
 @objc class AppDelegate: FlutterAppDelegate, SwiftLiveAudioEngineDelegate {
 
     private static let METHOD_CHANNEL = "com.livemic.app/audio_control"

@@ -10,26 +10,27 @@ workflows:
       groups:
         - app_store_credentials # Optional: Configure in Codemagic UI if using App Store Connect
     scripts:
-      - name: Set up local properties and dependencies
+      - name: Set up dependencies
         script: |
+          flutter config --no-enable-swift-package-manager
           flutter packages pub get
       - name: Install CocoaPods
         script: |
           cd ios
-          pod install
+          pod install --repo-update
           cd ..
-      - name: Build iOS IPA
+      - name: Build iOS Application
         script: |
-          # Build release IPA. If code signing identities are set in Codemagic UI,
-          # Codemagic will automatically sign. For manual testing without certificates,
-          # --no-codesign produces the payload and payload archive.
-          flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist || \
-          flutter build ios --release --no-codesign
-      - name: Package Unsigned IPA if no profile is provided
+          flutter config --no-enable-swift-package-manager
+          if [ -f "/Users/builder/export_options.plist" ]; then
+            flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist
+          else
+            flutter build ios --release --no-codesign
+          fi
+      - name: Package IPA
         script: |
-          # Fallback packaging into installable IPA if unsigned build was performed
-          if [ ! -d "build/ios/ipa" ]; then
-            mkdir -p build/ios/ipa/Payload
+          mkdir -p build/ios/ipa/Payload
+          if [ -d "build/ios/iphoneos/Runner.app" ]; then
             cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
             cd build/ios/ipa
             zip -r live_mic_app.ipa Payload
